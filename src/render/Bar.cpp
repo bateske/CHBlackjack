@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 // Button bar derived from Press-Play-On-Tape/Blackjack (Apache-2.0),
 // PlayGameState_Render.cpp drawButtons(); redrawn 2026 in colour for CHGame.
 #include <CHGfx.h>
@@ -34,7 +34,7 @@ static void button(int x, int w, uint8_t face, const char *label, bool sel, bool
     bool big = sel && gfx_textWidth(label) <= w - 4;
     if (big) gfx_text(x + w / 2 - gfx_textWidth(label) / 2, y + 3, label, tc);
     else text35(x + w / 2 - text35Width(label) / 2, y + 4, label, tc);
-    if (!on) dither(x + 1, y + 1, w - 2, h - 2, INK, 0);
+    if (!on) gfx_dither(x + 1, y + 1, w - 2, h - 2, INK, 0);
 }
 
 static void layout(const uint8_t *target, uint8_t n, int16_t *xs, int16_t *ws) {
@@ -89,7 +89,7 @@ bool draw(const Round &r, uint32_t frame) {
                 if (sel) fillRound(xs[i], y, ws[i], 13, 3, FX_B);
                 art::chip(cx, y + 1, D[i], true);
                 text35(cx - text35Width(V[i]) / 2, y + 7, V[i], on ? (sel ? INK : WHITE) : SILVER);
-                if (!on) dither(xs[i], y, ws[i], 13, NAVY, 0);
+                if (!on) gfx_dither(xs[i], y, ws[i], 13, NAVY, 0);
             }
             button(xs[4], ws[4], GOLD, "DEAL", r.sel == B_DEAL, r.slotEnabled(B_DEAL), frame);
             button(xs[5], ws[5], SILVER, "CLR", r.sel == B_CLEAR, r.slotEnabled(B_CLEAR), frame);

@@ -16,6 +16,10 @@ void chgame_enter_bootloader(void);
 }
 #else
 void sim_out(const uint8_t *p, uint32_t n);
+uint64_t sim_hostNanos();
+// Render cost in the simulator, in host nanoseconds: compare two builds by
+// the ratio, since virtual micros() does not move while a frame is drawn.
+static uint64_t pcT0, pcSum, pcMax;
 #endif
 
 namespace dbg {
@@ -106,7 +110,11 @@ static void execute() {
             fmtStr(p, " 8224\n");
             print(buf);
             out(gfx_fb, GFX_FB_BYTES);
-            out((const uint8_t *)gfx_pal, 32);
+            {                                        // as the panel shows it, fade included
+                uint16_t pal[16];                    // one write: out() ends in a USB flush
+                for (uint8_t i = 0; i < 16; i++) pal[i] = gfx_paletteOut(i);
+                out((const uint8_t *)pal, sizeof pal);
+            }
             break;
         case 'K':
             arduboy.injected = (uint8_t)parseNum(args, 16);
@@ -130,6 +138,11 @@ static void execute() {
             p = kv(p, " max=", maxRnd);
             p = kv(p, " late=", late);
             p = kv(p, " frames=", frames);
+#ifdef CHSIM
+            p = kv(p, " pcrnd=", (uint32_t)(pcSum / f));
+            p = kv(p, " pcmax=", (uint32_t)pcMax);
+            pcSum = pcMax = 0;
+#endif
             fmtStr(p, "\n");
             print(buf);
             sumUpd = sumWait = sumRnd = maxRnd = frames = late = 0;
@@ -191,8 +204,18 @@ void markUpdateStart() {
     tUpd = now;
 }
 void markWaitStart()   { tWait = micros(); sumUpd += tWait - tUpd; }
-void markRenderStart() { tRnd = micros(); sumWait += tRnd - tWait; }
+void markRenderStart() {
+    tRnd = micros(); sumWait += tRnd - tWait;
+#ifdef CHSIM
+    pcT0 = sim_hostNanos();
+#endif
+}
 void markRenderEnd() {
+#ifdef CHSIM
+    uint64_t d = sim_hostNanos() - pcT0;
+    pcSum += d;
+    if (d > pcMax) pcMax = d;
+#endif
     uint32_t r = micros() - tRnd;
     sumRnd += r;
     if (r > maxRnd) maxRnd = r;

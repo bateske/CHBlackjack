@@ -25,25 +25,33 @@ Apache-2.0, like this port; see `LICENSE` and `NOTICE`.
 
 You need the Arduino IDE (2.x) or `arduino-cli`, and:
 
-1. **The CHGame board package, 0.2.2 or later.** Add this to
+1. **The CHGame board package, 0.2.4 or later.** Add this to
    *Preferences > Additional Boards Manager URLs*, then install *CHGame* from
    *Tools > Board > Boards Manager*:
 
        https://github.com/bateske/CH32SerialBoot/releases/latest/download/package_chgame_index.json
 
-2. **The CHGfx library, 1.2.0** from <https://github.com/bateske/CHgfx>:
+2. **The CHGfx library, 1.3.0** from <https://github.com/bateske/CHgfx>:
    *Code > Download ZIP*, then *Sketch > Include Library > Add .ZIP
    Library*, or clone it into your sketchbook's `libraries/CHGfx`.
 
 3. **This repository**, in a folder named `CHBlackjack` (the name must match
    `CHBlackjack.ino`; cloning does that for you).
 
-Select the board **CHGame** and keep its default menu settings:
-*Optimize: Smallest (-Os default)* and *Peripherals: Game*. They matter - the
-game uses about 50 KB of the 50.9 KB application space and does not fit at -O2
-or with the Full peripheral set. Then press Upload. From the command line:
+Select the board **CHGame**, set *Tools > Optimize* to *Smallest + LTO
+(-Os -flto)* and *Tools > USB* to *Upload only*, and keep *Peripherals:
+Game*. The game never uses Serial, and Upload still works without touching
+the board. Built that way the game uses about 45.6 KB of the 50.9 KB
+application space. Saved games live in the last two 256-byte flash pages
+of that space, so the game has to end before them. With both menus left at
+their defaults (no LTO, USB Serial) it does, but by only 60 bytes; *Upload
+only* alone leaves about 0.7 KB to spare and *Smallest + LTO* alone about
+3.9 KB. A build that grows into the pages saves to the one page left, so a
+power cut during a save can lose it, and one that leaves neither saves
+nothing (Stats says SAVING UNAVAILABLE).
+Then press Upload. From the command line:
 
-    arduino-cli compile -b CHGame:ch32v:CHGame:opt=osstd,rtlib=nano,periph=game CHBlackjack
+    arduino-cli compile -b CHGame:ch32v:CHGame:opt=oslto,rtlib=nano,periph=game,usb=uploadonly CHBlackjack
     arduino-cli upload  -b CHGame:ch32v:CHGame -p COMx CHBlackjack
 
 No other libraries are needed; sound is built in.
@@ -96,8 +104,11 @@ statistics, or press A for the credits:
 ## How it fits (and what it taught)
 
 * **Flash is the wall.** The CH32X035 gives a sketch 50,944 bytes and the
-  game uses about 50 KB of it: roughly core + USB 6 KB, CHGfx 7 KB, rules 5 KB,
-  presentation 12 KB, screens 8 KB, art 3.2 KB, sound and music 2.5 KB.
+  game uses about 45.6 KB of it with link-time optimisation. Without LTO it
+  is about 50 KB: roughly core + USB 5.1 KB, CHGfx 8.7 KB, rules and saving
+  5.8 KB, presentation (table, cards, button bar, effects, palette and the
+  game's own drawing) 17.1 KB, screens 7.4 KB, art 3 KB, sound and music
+  2.9 KB.
   Getting there meant building everything at -Os, dropping `snprintf`
   (3.5 KB with 64-bit division), replacing `pinMode` with register writes
   (2 KB of pin tables), writing a 1.8 KB sound sequencer instead of the
@@ -109,14 +120,17 @@ statistics, or press A for the credits:
   content changed or that something moving touched. Every frame is still
   flushed, so palette effects (the rainbow BLACKJACK!, pulsing highlights,
   fades) cost nothing. Gameplay holds 60 fps; the heaviest moments (a bust
-  with screen shake and a banner) take up to ~25 ms to draw.
+  with screen shake and a banner) took up to 25 ms to draw on CHGfx 1.2
+  and take 11 ms now, measured on the board.
 * **Logic runs at a fixed 60 Hz**; if drawing falls behind, the loop
   catches up with extra logic ticks, so the game never slows down.
-* **Big outlined lettering is expensive** (several ms a word: a mask is
-  built pixel by pixel, then painted in up to three passes), so screens
-  that animate draw it once. The credits page draws its felt once and
-  redraws only the wall band - the dealer telling the credits, a neon sign
-  on the blink, a cigarette's smoke - in 3.3 ms a frame.
+* **Big outlined lettering is expensive** (a 1 bpp mask of the words is
+  built, grown by a pixel for the outline, then painted as up to three
+  layers), so screens that animate draw it once. The credits page draws
+  its felt once and redraws only the wall band - the dealer telling the
+  credits, a neon sign on the blink, a cigarette's smoke - in 3.3 ms a
+  frame measured on CHGfx 1.2 (about 2 ms now, by an instruction-count
+  estimate).
 * **Saving without EEPROM:** the CHGame bootloader erases only the pages a
   new sketch occupies, so the two pages below its metadata page (0xF500,
   0xF600) survive re-uploads. Records carry a sequence number and CRC, and
@@ -142,10 +156,11 @@ point at its `src/` folder instead).
   runs the game on the PC from a script and writes screenshots, GIFs and a
   contact sheet. It flags drawing into the framebuffer while a flush is
   still converting it. `tools/scripts/showcase.txt` makes the GIFs above.
-* `python tools/device.py upload [--debug]` - build and upload. `--debug`
-  adds a serial protocol (`src/debug/Debug.h`) for screenshots, injected
-  input and frame-by-frame lockstep; to fit, debug builds leave out the
-  music and the credits page.
+* `python tools/device.py upload [--debug]` - build and upload, with the
+  settings above. `--debug` keeps USB Serial and adds a serial protocol
+  (`src/debug/Debug.h`) for screenshots, injected input and frame-by-frame
+  lockstep; debug builds leave out the music and the credits page, which
+  the tests never need.
 * `python tools/device.py run tools/scripts/sc_split.txt out/` - the same
   script on the attached board, in lockstep; device and simulator
   screenshots match pixel for pixel. `pace.txt` checks real-time frame

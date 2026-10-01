@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 // Derived from Press-Play-On-Tape/Blackjack (Apache-2.0),
 // PlayGameState_Play.cpp / _Utils.cpp / _Buttons.cpp. Modified 2026 for
 // CHGame by bateske (see Round.h and NOTICE).

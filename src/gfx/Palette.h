@@ -1,10 +1,11 @@
 // The one 16-colour palette, and the tricks it allows.
 //
 // CHGfx applies the palette while it converts the framebuffer for the panel,
-// so recolouring an index recolours every pixel that uses it for free. The
-// catch: gfx_setPalette() rebuilds the conversion LUT, so it must never run
-// while an async flush is converting. All edits land in a staging copy and
-// pal::commit() pushes them once per frame, right after gfx_wait().
+// so recolouring an index recolours every pixel that uses it for free.
+// All edits land in a staging copy and pal::commit() works out the final
+// colours (flash, desaturate, fade) once per frame. CHGfx stages
+// gfx_setPalette() itself (it takes effect when the next flush starts), so
+// commit() may run while a frame is still going out.
 #pragma once
 #include <stdint.h>
 
@@ -28,7 +29,7 @@ void setFx(uint8_t index, uint16_t rgb444); // FX_A/FX_B manual control
 void setCycling(bool on);                   // rainbow FX_A + pulse FX_B
 void tick();                                // once per frame, before commit
 void resetClock();                          // debug: restart the FX_A/FX_B cycle
-void commit();                              // only after gfx_wait()
+void commit();                              // once per frame, before the flush
 uint16_t rgb444(uint8_t index);             // current staged colour
 
 }  // namespace pal

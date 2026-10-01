@@ -3,6 +3,7 @@
 #include "Mask.h"
 
 #include "Draw.h"
+#include "../RamFunc.h"
 
 Mask maskBegin(int w, int h) {
     Mask m;
@@ -14,15 +15,22 @@ Mask maskBegin(int w, int h) {
     return m;
 }
 
-void Mask::set(int x, int y) {
-    x += 1; y += 1;                                   // margin
-    if ((unsigned)x >= (unsigned)(w + 2) || (unsigned)y >= (unsigned)(h + 2)) return;
-    bits[y * stride + (x >> 3)] |= (uint8_t)(0x80 >> (x & 7));
-}
-
+// A scale x scale block (scale <= 8) with its top-left at (x, y), clipped
+// to the mask: per row, one masked OR into at most two bytes.
 static void plot(Mask &m, int x, int y, uint8_t scale) {
-    for (int j = 0; j < scale; j++)
-        for (int i = 0; i < scale; i++) m.set(x + i, y + j);
+    int x0 = x + 1, x1 = x0 + scale;                     // margin
+    if (x0 < 0) x0 = 0;
+    if (x1 > m.w + 2) x1 = m.w + 2;
+    if (x0 >= x1) return;
+    unsigned v = (((0xFF00u >> (x1 - x0)) & 0xFF) << 8) >> (x0 & 7);
+    uint8_t *p = m.bits + (x0 >> 3);
+    for (int j = 0; j < scale; j++) {
+        unsigned yy = (unsigned)(y + 1 + j);
+        if (yy >= (unsigned)(m.h + 2)) continue;
+        uint8_t *row = p + yy * m.stride;
+        row[0] |= (uint8_t)(v >> 8);
+        if (v & 0xFF) row[1] |= (uint8_t)v;
+    }
 }
 
 int text35WidthScaled(const char *s, uint8_t scale) { return text35Width(s) * scale; }
@@ -40,18 +48,28 @@ void maskText35(Mask &m, int x, int y, const char *s, uint8_t scale, const int8_
     }
 }
 
-void maskBlit1(Mask &m, const uint8_t *bits, int x, int y, uint8_t w, uint8_t h, uint8_t scale) {
-    uint8_t stride = (uint8_t)((w + 7) >> 3);
-    for (int j = 0; j < h; j++)
-        for (int i = 0; i < w; i++)
-            if (bits[j * stride + (i >> 3)] & (0x80 >> (i & 7))) plot(m, x + i * scale, y + j * scale, scale);
+// Mask row j + 1 is bitmap row j moved right by the 1 px margin, a byte at
+// a time. The logos' padding bits are zero (tools/assets.py), so a carry
+// out of a row's last byte is a real pixel, and then the mask row has a
+// byte for it (w a multiple of 8).
+void maskBlit1(Mask &m, const uint8_t *bits, uint8_t w, uint8_t h) {
+    uint8_t s = (uint8_t)((w + 7) >> 3);
+    uint8_t *d = m.bits + m.stride;
+    for (int j = 0; j < h; j++, d += m.stride) {
+        uint8_t carry = 0;
+        for (int b = 0; b < s; b++) {
+            uint8_t v = *bits++;
+            d[b] |= (uint8_t)(carry | v >> 1);
+            carry = (uint8_t)(v << 7);
+        }
+        if (carry) d[s] |= carry;
+    }
 }
 
 // Paint the set runs of one mask row (stride bytes, MSB-first) at screen
 // row y, where bit 0 of the row is screen column x. From SRAM, skipping
 // empty and full bytes whole: this loop is most of a banner's cost.
-__attribute__((section(".srodata.ramfunc.maskruns"), noinline))
-static void runs(const uint8_t *row, uint8_t stride, int x, int y, uint8_t c) {
+RAMFUNC(maskruns) static void runs(const uint8_t *row, uint8_t stride, int x, int y, uint8_t c) {
     if ((unsigned)y >= GFX_H) return;
     int n = stride * 8, i = 0, start = -1;
     while (i < n) {
@@ -69,41 +87,31 @@ static void runs(const uint8_t *row, uint8_t stride, int x, int y, uint8_t c) {
 
 // Grow row r by one pixel in all 8 directions into out.
 static void dilateRow(const Mask &m, int r, uint8_t *out) {
-    int rows = m.h + 2;
+    const uint8_t *row = m.bits + r * m.stride;
+    uint8_t v[32];
     for (int b = 0; b < m.stride; b++) {
-        uint8_t v = m.bits[r * m.stride + b];
-        if (r > 0) v |= m.bits[(r - 1) * m.stride + b];
-        if (r + 1 < rows) v |= m.bits[(r + 1) * m.stride + b];
-        out[b] = v;
+        uint8_t o = row[b];
+        if (r > 0) o |= row[b - m.stride];
+        if (r + 1 < m.h + 2) o |= row[b + m.stride];
+        v[b] = o;
     }
-    uint8_t carryL = 0;
-    uint8_t tmp[32];
-    for (int b = 0; b < m.stride; b++) tmp[b] = out[b];
-    for (int b = m.stride - 1; b >= 0; b--) {           // shift left (x-1)
-        uint8_t nc = (uint8_t)(tmp[b] >> 7);
-        out[b] |= (uint8_t)((tmp[b] << 1) | carryL);
-        carryL = nc;
-    }
-    uint8_t carryR = 0;
-    for (int b = 0; b < m.stride; b++) {                  // shift right (x+1)
-        uint8_t nc = (uint8_t)(tmp[b] << 7);
-        out[b] |= (uint8_t)((tmp[b] >> 1) | carryR);
-        carryR = nc;
-    }
+    for (int b = 0; b < m.stride; b++)                    // and from x+1, x-1
+        out[b] = (uint8_t)(v[b] | v[b] << 1 | (b + 1 < m.stride ? v[b + 1] >> 7 : 0)
+                                | v[b] >> 1 | (b > 0 ? v[b - 1] << 7 : 0));
 }
 
+// One pass, top to bottom. Row r's shadow lands on screen row r + 1, which
+// only later rows paint over, so the layers (shadow, outline, fill) stack
+// as they would in three whole passes, with one dilation per row.
 void maskDraw(const Mask &m, int x, int y, uint8_t fill, int outline, int shadow, const uint8_t *ramp) {
     int rows = m.h + 2;
     int ox = x - 1, oy = y - 1;                          // undo the margin
     uint8_t d[32];
-    if (shadow >= 0) {
-        for (int r = 0; r < rows; r++) {
-            if (outline >= 0) { dilateRow(m, r, d); runs(d, m.stride, ox + 1, oy + r + 1, (uint8_t)shadow); }
-            else runs(m.bits + r * m.stride, m.stride, ox + 1, oy + r + 1, (uint8_t)shadow);
-        }
+    for (int r = 0; r < rows; r++) {
+        const uint8_t *row = m.bits + r * m.stride, *grown = row;
+        if (outline >= 0) { dilateRow(m, r, d); grown = d; }
+        if (shadow >= 0) runs(grown, m.stride, ox + 1, oy + r + 1, (uint8_t)shadow);
+        if (outline >= 0) runs(d, m.stride, ox, oy + r, (uint8_t)outline);
+        if (r > 0 && r < rows - 1) runs(row, m.stride, ox, oy + r, ramp ? ramp[r - 1] : fill);
     }
-    if (outline >= 0)
-        for (int r = 0; r < rows; r++) { dilateRow(m, r, d); runs(d, m.stride, ox, oy + r, (uint8_t)outline); }
-    for (int r = 1; r < rows - 1; r++)
-        runs(m.bits + r * m.stride, m.stride, ox, oy + r, ramp ? ramp[r - 1] : fill);
 }

@@ -5,11 +5,14 @@
     python tools/device.py run SCRIPT OUTDIR       debug build, upload, run a chdrive script
     python tools/device.py shot OUT.png            screenshot of a running debug build
 
-The game must be built with opt=osstd (the IDE's default "Smallest") and
-periph=game (the default Peripherals setting of CHGame core 0.2.2+): it
-does not fit in the 50,944-byte application region at -O2 or with the full
-peripheral set. The debug protocol is enabled through build.extra_flags,
-which is empty on this platform.
+Needs the CHGame core 0.2.4+. Both builds use opt=oslto (Tools > Optimize >
+"Smallest + LTO": -Os -flto, about 3.9 KB smaller than plain -Os) and
+periph=game (the default Peripherals setting). Release builds add
+usb=uploadonly (Tools > USB > "Upload only": compiles out Serial, which
+release code never uses, but keeps the 1200-baud upload handshake, so
+uploading still needs no button press). Debug builds keep USB Serial, which
+the debug protocol talks over; the protocol is enabled through
+build.extra_flags, which is empty on this platform.
 """
 import argparse
 import subprocess
@@ -19,12 +22,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SKETCH = HERE.parent
 CHSIM = HERE / "chsim"
-FQBN = "CHGame:ch32v:CHGame:opt=osstd,rtlib=nano,periph=game"
+FQBN_DEBUG = "CHGame:ch32v:CHGame:opt=oslto,rtlib=nano,periph=game"
+FQBN_RELEASE = FQBN_DEBUG + ",usb=uploadonly"
 
 
 def build(debug):
     out = SKETCH / "build" / ("debug" if debug else "release")
-    cmd = ["arduino-cli", "compile", "-b", FQBN, "--build-path", str(out)]
+    cmd = ["arduino-cli", "compile", "-b", FQBN_DEBUG if debug else FQBN_RELEASE,
+           "--build-path", str(out)]
     if debug:
         cmd += ["--build-property", "build.extra_flags=-DCHBJ_DEBUG=1"]
     cmd.append(str(SKETCH))

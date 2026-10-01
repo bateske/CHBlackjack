@@ -1,14 +1,16 @@
 // CHBlackjack build switches.
 //
 // Keep feature switches here rather than in --build-property flags. The game
-// needs the CHGame core 0.2.2+ with its default Peripherals menu setting
-// ("Game"), which compiles out Serial1/tone/HardwareTimer: ~4 KB of flash.
+// is built with the CHGame core 0.2.4+, Optimize "Smallest + LTO" and the
+// default Peripherals setting ("Game", which compiles out
+// Serial1/tone/HardwareTimer: ~3.4 KB of flash); release builds also set USB
+// "Upload only" (no Serial). tools/device.py has the exact settings.
 #pragma once
 
 #define CHBJ_VERSION     "1.0"
 
 // Serial debug protocol: screenshots, input injection, lockstep, perf.
-// Off in normal builds (it costs ~1.3 KB and one of the two save pages).
+// Off in normal builds (it costs ~1.8 KB and needs USB Serial).
 // tools/device.py turns it on with --build-property build.extra_flags.
 #ifndef CHBJ_DEBUG
 #ifdef CHSIM
@@ -18,9 +20,11 @@
 #endif
 #endif
 
-// Device debug builds carry the ~1.3 KB protocol, so they leave out things
-// the tests never need: the music scores and the credits page.
-// The simulator (not flash-bound) and release builds keep everything.
+// Debug builds carry the ~1.8 KB protocol, so they leave out things the
+// tests never need: every CHBJ_DEBUG build, the simulator included, has no
+// music scores (src/audio/Music.cpp, from tools/make_music.py), and device
+// debug builds also drop the credits page unless built with -DCHBJ_FULL.
+// Release builds keep everything.
 #if CHBJ_DEBUG && !defined(CHSIM) && !defined(CHBJ_FULL)
 #define CHBJ_LEAN        1
 #else

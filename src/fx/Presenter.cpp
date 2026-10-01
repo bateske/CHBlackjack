@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 #include <CHGfx.h>
 #include <string.h>
 #include <stdio.h>
@@ -421,8 +421,7 @@ bool busy() {
 // ---------------------------------------------------------------------------
 void speechBubble(const char *src, int typed) {
     int x = BUBBLE_X, y = BUBBLE_Y, w = BUBBLE_W, h = BUBBLE_H;
-    fillRound(x, y, w, h, 4, WHITE);
-    roundRect(x, y, w, h, 4, INK);
+    panel(x, y, w, h, 4, WHITE, INK);
     // Tail toward the dealer's mouth.
     for (int i = 0; i < 5; i++) {
         gfx_hline(x - 5 + i, y + 22 + i, 6 - i, WHITE);
@@ -611,7 +610,7 @@ bool render(const Round &r, uint32_t frame) {
         gfx_fillRect(0, RAIL_Y + RAIL_H, 128, TRIM_Y - RAIL_Y - RAIL_H, FELT);
         table::felt(r);
         dbg::prof(1);
-        if (r.phase == Phase::InitBet) ellipse(BET_CX, BET_CY, BET_RX + 1, BET_RY + 1, FX_B);
+        if (r.phase == Phase::InitBet) gfx_ellipse(BET_CX, BET_CY, BET_RX + 1, BET_RY + 1, FX_B);
         drawHand(r, 0);
         badgeFor(r, 0);
         dbg::prof(2);

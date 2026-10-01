@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 // Card rendering derived from Press-Play-On-Tape/Blackjack (Apache-2.0),
 // PlayGameState_Render.cpp drawCard(); rebuilt 2026 in colour for CHGame.
 #include <CHGfx.h>
@@ -46,7 +46,7 @@ static void glyphRot(int x, int y, const uint8_t *cols, uint8_t n, uint8_t h, ui
 static void back(int x, int y, int w, int h) {
     fillRound(x, y, w, h, 2, WINE);
     if (w > 6) {
-        dither(x + 2, y + 2, w - 4, h - 4, RED, 0);
+        gfx_dither(x + 2, y + 2, w - 4, h - 4, RED, 0);
         gfx_rect(x + 2, y + 2, w - 4, h - 4, WHITE);
     }
     if (w >= 12) {
@@ -77,8 +77,7 @@ void card(int x, int y, uint8_t c, bool faceUp, int w, bool full) {
     shadow(x, y, w, H);
     if (!faceUp) { back(x, y, w, H); return; }
 
-    fillRound(x, y, w, H, 2, WHITE);
-    roundRect(x, y, w, H, 2, INK);
+    panel(x, y, w, H, 2, WHITE, INK);
     if (w < 10) return;
     uint8_t col = suitColour(c), r = cardRank(c), s = cardSuit(c);
     int ix = x + 2 - (22 - w) / 4;                       // corner index slides in as it squashes
@@ -95,7 +94,7 @@ void card(int x, int y, uint8_t c, bool faceUp, int w, bool full) {
         for (uint8_t i = 0; i < 16; i++) remap[i] = i;
         remap[RED] = col == INK ? BLUE : col;            // robe in the suit colour
         gfx_rect(x + 6, y + 4, 16, 20, SILVER);
-        blit4(COURT[r - 10], x + 7, y + 5, 14, 18, 15, remap);
+        gfx_sprite4(COURT[r - 10], x + 7, y + 5, remap);
         glyph(x + 16, y + 20, SUIT_SMALL + s * 5, 5, col);
     } else {
         span1(x + 9, y + 11, PIP9 + PIP9_AT[s], col);
@@ -105,8 +104,7 @@ void card(int x, int y, uint8_t c, bool faceUp, int w, bool full) {
 void cardSideways(int x, int y, uint8_t c) {
     const int W = 28, H = 22;
     shadow(x, y, W, H);
-    fillRound(x, y, W, H, 2, WHITE);
-    roundRect(x, y, W, H, 2, INK);
+    panel(x, y, W, H, 2, WHITE, INK);
     uint8_t col = suitColour(c), r = cardRank(c), s = cardSuit(c);
     // Rotated clockwise: the corner index lands top-right.
     glyphRot(x + W - 10, y + 2, RANK_GLYPH + r * 7, RANK_WIDTH[r], 7, col);
@@ -144,8 +142,8 @@ void chip(int cx, int y, uint8_t d, bool top) {
     for (int i = -4; i <= 4; i += 4) gfx_vline(cx + i, y + 2, 2, e);
     gfx_hline(cx - 5, y + 4, 11, INK);
     if (!top) return;
-    fillEllipse(cx, y + 1, 6, 2, b);
-    ellipse(cx, y + 1, 7, 2, INK);
+    gfx_fillEllipse(cx, y + 1, 6, 2, b);
+    gfx_ellipse(cx, y + 1, 7, 2, INK);
     gfx_pixel(cx - 4, y + 1, e); gfx_pixel(cx + 4, y + 1, e);
     gfx_pixel(cx, y, e); gfx_pixel(cx, y + 2, e);
 }
@@ -167,8 +165,7 @@ int badgeWidth(const char *t) { return gfx_textWidth(t) + 5; }
 
 void badge(int x, int y, const char *t, uint8_t bg, uint8_t fg) {
     int w = badgeWidth(t);
-    fillRound(x, y, w, 11, 3, bg);
-    roundRect(x, y, w, 11, 3, INK);
+    panel(x, y, w, 11, 3, bg, INK);
     gfx_text(x + 3, y + 2, t, fg);
 }
 

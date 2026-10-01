@@ -1,11 +1,6 @@
 #pragma GCC optimize("Os")
-#include <string.h>
 #include "Draw.h"
-
-// Hot loops run from SRAM: from flash (3 wait states, no cache) a per-pixel
-// loop costs ~3 us a pixel on this part. Each gets its own section so the
-// unused ones are dropped at link time.
-#define RAMFUNC(name) __attribute__((section(".srodata.ramfunc." #name), noinline))
+#include "../RamFunc.h"   // hot loops run from SRAM
 
 static inline void plot(uint8_t *p, int x, uint8_t c) {
     if (x & 1) *p = (uint8_t)((*p & 0x0F) | (c << 4));
@@ -13,6 +8,11 @@ static inline void plot(uint8_t *p, int x, uint8_t c) {
 }
 
 // Corner insets per row for radius 1..4 (pixel-art circles, not chamfers).
+// CHGfx 1.3's gfx_fillRoundRect/gfx_roundRect draw the same pixels for all
+// but one of the game's rects, but work the insets out with isqrt on every
+// call. These two take 390 B against the library's 524 B in the release
+// build, and are faster. (The exception: the library caps r to half the
+// width, so a 4 px mid-flip card needed a special case.)
 static const uint8_t INSET[4][4] = { {1}, {2, 1}, {3, 1, 1}, {4, 2, 1, 1} };
 
 void fillRound(int x, int y, int w, int h, uint8_t r, uint8_t c) {
@@ -44,117 +44,14 @@ void roundRect(int x, int y, int w, int h, uint8_t r, uint8_t c) {
     gfx_vline(x + w - 1, y + r, h - 2 * r, c);
 }
 
-RAMFUNC(blit4) void blit4(const uint8_t *spr, int x, int y, uint8_t w, uint8_t h, int8_t trans, const uint8_t *remap) {
-    if (!remap) { gfx_blit(spr, x, y, w, h, trans); return; }
-    uint8_t stride = (uint8_t)((w + 1) >> 1);
-    for (int j = 0; j < h; j++) {
-        int yy = y + j;
-        if ((unsigned)yy >= GFX_H) continue;
-        const uint8_t *row = spr + j * stride;
-        uint8_t *d = gfx_fb + yy * GFX_FB_STRIDE;
-        for (int i = 0; i < w; i++) {
-            uint8_t b = row[i >> 1];
-            uint8_t v = (i & 1) ? (uint8_t)(b >> 4) : (uint8_t)(b & 0x0F);
-            int xx = x + i;
-            if (v != (uint8_t)trans && (unsigned)xx < GFX_W) plot(d + (xx >> 1), xx, remap[v]);
-        }
-    }
+void panel(int x, int y, int w, int h, uint8_t r, uint8_t fill, uint8_t edge) {
+    fillRound(x, y, w, h, r, fill);
+    roundRect(x, y, w, h, r, edge);
 }
 
-// Mostly short spans (the dealer is ~330 of them): write those directly and
-// hand only the long ones to gfx_hline.
-RAMFUNC(span4) void span4(const uint8_t *d, int x, int y, int8_t trans, const uint8_t *remap) {
-    uint8_t h = d[1];
-    d += 2;
-    for (int j = 0; j < h; j++, y++) {
-        uint8_t n = *d++;
-        int px = x;
-        uint8_t *row = gfx_fb + y * GFX_FB_STRIDE;
-        bool rowOk = (unsigned)y < GFX_H;
-        while (n--) {
-            uint8_t b = *d++;
-            uint8_t len = (uint8_t)((b >> 4) + 1), c = (uint8_t)(b & 15);
-            if (c != (uint8_t)trans && rowOk) {
-                if (remap) c = remap[c];
-                if (len > 4 || px < 0 || px + len > GFX_W) gfx_hline(px, y, len, c);
-                else for (int k = 0; k < len; k++) plot(row + ((px + k) >> 1), px + k, c);
-            }
-            px += len;
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Shapes and effects
-// ---------------------------------------------------------------------------
-static int isqrt(int v) {
-    if (v <= 0) return 0;
-    int r = 0, bit = 1 << 14;
-    while (bit > v) bit >>= 2;
-    while (bit) {
-        if (v >= r + bit) { v -= r + bit; r = (r >> 1) + bit; }
-        else r >>= 1;
-        bit >>= 2;
-    }
-    return r;
-}
-
-// Half-widths per row for the few ellipse sizes in use (bet circle, chips),
-// computed once: the integer square roots cost ~10 us a row from flash.
-struct EllipseRows { uint8_t rx, ry, dx[16]; };
-static EllipseRows ecache[4];
-
-static const uint8_t *ellipseRows(int rx, int ry) {
-    for (auto &e : ecache) if (e.rx == rx && e.ry == ry) return e.dx;
-    static uint8_t next = 0;
-    EllipseRows &e = ecache[next++ & 3];
-    e.rx = (uint8_t)rx; e.ry = (uint8_t)ry;
-    for (int dy = 0; dy <= ry && dy < 16; dy++) {
-        int t = ry * ry - dy * dy + ry / 2;
-        e.dx[dy] = (uint8_t)(ry > 0 ? isqrt(rx * rx * t / (ry * ry)) : rx);
-    }
-    return e.dx;
-}
-
-void fillEllipse(int cx, int cy, int rx, int ry, uint8_t c) {
-    const uint8_t *dx = ellipseRows(rx, ry);
-    for (int dy = -ry; dy <= ry; dy++) {
-        int d = dx[dy < 0 ? -dy : dy];
-        gfx_hline(cx - d, cy + dy, 2 * d + 1, c);
-    }
-}
-
-void ellipse(int cx, int cy, int rx, int ry, uint8_t c) {
-    const uint8_t *dx = ellipseRows(rx, ry);
-    for (int dy = -ry; dy <= ry; dy++) {
-        int a = dy < 0 ? -dy : dy;
-        int d = dx[a];
-        int inner = (a == ry) ? -d - 1 : dx[a + 1];
-        int len = d - inner; if (len < 1) len = 1;
-        gfx_hline(cx + d - len + 1, cy + dy, len, c);
-        gfx_hline(cx - d, cy + dy, len, c);
-    }
-}
-
-void dither(int x, int y, int w, int h, uint8_t c, uint8_t phase) {
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (x + w > GFX_W) w = GFX_W - x;
-    if (y + h > GFX_H) h = GFX_H - y;
-    if (w <= 0 || h <= 0) return;
-    uint8_t cc = (uint8_t)(c | (c << 4));
-    for (int j = 0; j < h; j++) {
-        int yy = y + j;
-        uint8_t *row = gfx_fb + yy * GFX_FB_STRIDE;
-        // Pixels where (px + yy + phase) is even get the colour.
-        uint8_t m = ((yy + phase) & 1) ? 0xF0 : 0x0F;
-        int i = x;
-        if (i & 1) { if (m == 0xF0) row[i >> 1] = (uint8_t)((row[i >> 1] & 0x0F) | (c << 4)); i++; }
-        for (; i + 1 < x + w; i += 2) row[i >> 1] = (uint8_t)((row[i >> 1] & ~m) | (cc & m));
-        if (i < x + w && m == 0x0F) row[i >> 1] = (uint8_t)((row[i >> 1] & 0xF0) | c);
-    }
-}
-
+// CHGfx 1.3's gfx_remapRect does the same, but from SRAM: in the release
+// build it cost 304 B more SRAM and 182 B more flash than this, for the one
+// rectangle that dims the waiting split hand (not a hot path).
 void remapRect(int x, int y, int w, int h, const uint8_t *m) {
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }

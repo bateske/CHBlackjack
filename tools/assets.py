@@ -174,8 +174,9 @@ def pack_span1(bits):
 
 
 def pack_span4(img, trans=TRANSPARENT):
-    """Colour image -> w, h, then per row: n, then n bytes of (len-1)<<4 | colour.
-    Transparent runs use colour index `skip` (the one colour never drawn)."""
+    """Colour image -> w, h, then per row: n, then n bytes of (len-1)<<4 | colour:
+    CHGfx's sprite4 format (gfx_sprite4). Transparent runs use colour 15, which
+    gfx_sprite4 skips, so the art never draws FX_B."""
     h, w = len(img), len(img[0])
     out = [w, h]
     for row in img:
@@ -192,19 +193,6 @@ def pack_span4(img, trans=TRANSPARENT):
         out.append(len(runs))
         for n, c in runs:
             out.append(((n - 1) << 4) | (15 if c == trans else c))
-    return out
-
-
-def pack_raw4(img):
-    """Colour image -> 4 bpp, CHGfx packing (even x low nibble), transparent = 15."""
-    out = []
-    for row in img:
-        for x in range(0, len(row), 2):
-            a = row[x]
-            b = row[x + 1] if x + 1 < len(row) else TRANSPARENT
-            a = 15 if a == TRANSPARENT else a
-            b = 15 if b == TRANSPARENT else b
-            out.append(a | (b << 4))
     return out
 
 
@@ -387,10 +375,10 @@ def main():
         o.array(name.upper(), spans, comment=f"{size}x{size} suit pips as row spans")
         o.array(name.upper() + "_AT", idx, "uint16_t")
 
-    # Court cards: 14x18 4 bpp portraits; the robe colour is remapped per suit.
+    # Court cards: 14x18 portraits as row spans; the robe colour is remapped per suit.
     courts = load_sheet("court", (14, 18))
     for img, nm in zip(courts, ["JACK", "QUEEN", "KING"]):
-        o.array(f"COURT_{nm}", pack_raw4(img), comment=f"{nm.title()} portrait 14x18, 4 bpp")
+        o.array(f"COURT_{nm}", pack_span4(img), comment=f"{nm.title()} portrait 14x18, row spans")
         preview(f"court_{nm.lower()}", img, bg=1)
 
     # Dealer: PPOT's bust recoloured by rule, or tools/art/dealer.png when it
@@ -408,8 +396,8 @@ def main():
     preview("dealer_alt", [[v if v == TRANSPARENT else alt[v] for v in row] for row in img], bg=11)
     o.array("DEALER_ALT_REMAP", alt, comment="alternate dealer: remap applied to DEALER")
 
-    # Face expressions. The normal face is a 24x18 4 bpp patch at (12,14) of
-    # the dealer; every other expression is stored as the pixels that differ
+    # Face expressions. The normal face is a 24x18 patch (row spans) at (12,14)
+    # of the dealer; every other expression is stored as the pixels that differ
     # from it (16-bit words: index y*24+x << 4 | colour), a fraction of the size.
     # PPOT's expressions are drawn over the rule-built face; what each one
     # changes there is applied over the dealer actually in use.
@@ -424,7 +412,7 @@ def main():
         return [[e[y][x] if e[y][x] != ruled_normal[y][x] else normal[y][x] for x in range(24)]
                 for y in range(18)]
 
-    o.array("FACE_NORMAL", pack_raw4(normal), comment="face patch 24x18 at (12,14)")
+    o.array("FACE_NORMAL", pack_span4(normal), comment="face patch 24x18 at (12,14), row spans")
     preview("face_normal", normal, bg=11)
     faces = {}
     for f, nm in [("Dealer_FaceAngry", "ANGRY"), ("Dealer_FaceRaisedEye", "RAISED"),

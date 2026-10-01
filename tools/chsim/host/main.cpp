@@ -10,6 +10,7 @@
 #include <io.h>
 #endif
 #include "sim.h"
+#include <chrono>
 
 void setup();
 void loop();
@@ -59,6 +60,11 @@ static bool refill(bool block) {
     s_inLen = (int)strlen(s_in);
     s_inPos = 0;
     return s_inLen > 0;
+}
+
+uint64_t sim_hostNanos() {
+    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 int SimSerial::available() { return refill(false) ? s_inLen - s_inPos : 0; }

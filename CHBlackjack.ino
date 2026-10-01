@@ -59,9 +59,9 @@ void loop() {
         pal::tick();
         screens::update();
     } while (++ticks < 3 && arduboy.nextFrame());
+    pal::commit();                  // staged by CHGfx: lands with the next flush
     dbg::markWaitStart();
     gfx_wait();
-    pal::commit();
     dbg::markRenderStart();
     screens::render(arduboy.frameCount);
     dbg::markRenderEnd();

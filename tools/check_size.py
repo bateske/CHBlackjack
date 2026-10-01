@@ -1,12 +1,16 @@
 """Flash and RAM report for a CHBlackjack build, from the linker map.
 
-    python tools/check_size.py [build/dev] [--top 30] [--flash-limit N] [--ram-limit N]
+    python tools/check_size.py [build/release] [--top 30] [--flash-limit N] [--ram-limit N]
 
-arduino-cli reports RAM against 20,480 B, but the real ceiling for statics +
-heap is 18,416 B (the 2 KB stack is fixed at the top of SRAM), so this reads
-_ebss from the map instead. Flash is everything the image loads: text,
-rodata and the .data initialisers (including RAM functions).
-Exits non-zero when a limit is exceeded.
+The ceiling for statics + heap is 18,416 B (the 2 KB stack is fixed at the
+top of SRAM); this reads _ebss from the map. The image is everything flash
+holds: text, rodata and the .data initialisers (including RAM functions),
+and it decides how many save pages are left. Exits non-zero when a limit is
+exceeded.
+
+With LTO (opt=oslto, the release build) the per-file table shows the link's
+partitions (*.ltrans.o), not source files: use --symbols, or build with
+opt=osstd for a per-file view.
 """
 import argparse
 import collections
@@ -38,7 +42,8 @@ def parse(map_path):
                 continue
             name, size, f = cur, int(m.group(2), 16), m.group(3)
             cur = None
-        if not re.match(r"\.(text|rodata|srodata|data|sdata|bss|sbss)", name):
+        # .gnu.linkonce.r.*: RAM functions (loaded from flash, run from SRAM)
+        if not re.match(r"\.(text|rodata|srodata|data|sdata|bss|sbss|gnu\.linkonce\.r)", name):
             continue
         kind = "ram" if re.match(r"\.(bss|sbss)", name) else "flash"
         fname = re.split(r"[\\/]", f.strip())[-1]
@@ -55,7 +60,7 @@ def parse(map_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("build", nargs="?", default="build/dev")
+    ap.add_argument("build", nargs="?", default="build/release")
     ap.add_argument("--top", type=int, default=25)
     ap.add_argument("--flash-limit", type=int, default=FLASH_LIMIT)
     ap.add_argument("--ram-limit", type=int, default=RAM_LIMIT)

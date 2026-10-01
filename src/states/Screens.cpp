@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 // Screens derived from Press-Play-On-Tape/Blackjack (Apache-2.0):
 // SplashScreenState, TitleScreenState, GameWinState, GameLoseState and the
 // Game loop. Modified 2026 for CHGame by bateske: colour, animation, music,
@@ -141,16 +141,16 @@ static void seedOnce() {
 // ---------------------------------------------------------------------------
 static void feltBackdrop() {
     gfx_clear(FELT);
-    dither(0, 0, 128, 6, FELT_DK, 0);
-    dither(0, 122, 128, 6, FELT_DK, 1);
-    dither(0, 0, 6, 128, FELT_DK, 0);
-    dither(122, 0, 6, 128, FELT_DK, 1);
+    gfx_dither(0, 0, 128, 6, FELT_DK, 0);
+    gfx_dither(0, 122, 128, 6, FELT_DK, 1);
+    gfx_dither(0, 0, 6, 128, FELT_DK, 0);
+    gfx_dither(122, 0, 6, 128, FELT_DK, 1);
     gfx_rect(2, 2, 124, 124, GOLD);
 }
 
 static void lettering(const uint8_t *bits, int w, int x, int y, const uint8_t *ramp, int outline, int shadow) {
     Mask m = maskBegin(w, 16);
-    maskBlit1(m, bits, 0, 0, (uint8_t)w, 16);
+    maskBlit1(m, bits, (uint8_t)w, 16);
     maskDraw(m, x, y, GOLD, outline, shadow, ramp);
 }
 
@@ -184,7 +184,7 @@ static void splashUpdate() {
 // printed flat on the felt like the table's own lettering (credits).
 static void ppotLogo(int x, int y, bool printed = false) {
     Mask m = maskBegin(PPOT_LOGO_W, PPOT_LOGO_H);
-    maskBlit1(m, PPOT_LOGO, 0, 0, PPOT_LOGO_W, PPOT_LOGO_H);
+    maskBlit1(m, PPOT_LOGO, PPOT_LOGO_W, PPOT_LOGO_H);
     if (printed) { maskDraw(m, x, y, FELT_LT); return; }
     uint8_t ramp[PPOT_LOGO_H];
     for (int i = 0; i < PPOT_LOGO_H; i++) ramp[i] = i < 11 ? WHITE : (i < 22 ? CYAN : BLUE);
@@ -197,7 +197,7 @@ static void splashRender(uint32_t frame) {
     if (t > SPLASH_PRESENTS) centred35(68, "PRESENTS", SILVER);
     if (t > SPLASH_LOGO) {
         Mask l = maskBegin(104, 14);
-        maskBlit1(l, LOGO, 0, 0, 104, 14);
+        maskBlit1(l, LOGO, 104, 14);
         uint8_t r2[16];
         for (int i = 0; i < 16; i++) r2[i] = i < 3 ? FX_B : (i < 13 ? GOLD : WOOD);
         maskDraw(l, 12, 82, GOLD, INK, WINE, r2);
@@ -254,10 +254,10 @@ static void titleUpdate() {
 static void titleRender(uint32_t frame) {
     feltBackdrop();
     // Spotlight.
-    dither(24, 30, 80, 44, FELT_LT, 0);
+    gfx_dither(24, 30, 80, 44, FELT_LT, 0);
     // Logo: the top rows use FX_B, so the palette makes it shimmer with no redraw.
     Mask m = maskBegin(104, 14);
-    maskBlit1(m, LOGO, 0, 0, 104, 14);
+    maskBlit1(m, LOGO, 104, 14);
     uint8_t ramp[16];
     for (int i = 0; i < 16; i++) ramp[i] = i < 3 ? FX_B : (i < 12 ? GOLD : WOOD);
     maskDraw(m, 12, 8, GOLD, INK, WINE, ramp);
@@ -298,8 +298,7 @@ static void titleRender(uint32_t frame) {
         bool sel = i == menuSel;
         int w = gfx_textWidth(buf);
         if (sel) {
-            fillRound(64 - w / 2 - 6, y - 2, w + 12, 11, 3, NAVY);
-            roundRect(64 - w / 2 - 6, y - 2, w + 12, 11, 3, (frame & 16) ? FX_B : GOLD);
+            panel(64 - w / 2 - 6, y - 2, w + 12, 11, 3, NAVY, (frame & 16) ? FX_B : GOLD);
         }
         centred57(y, buf, sel ? GOLD : WHITE);
     }
@@ -398,9 +397,8 @@ static void playRender(uint32_t frame) {
         centred57(52, "DEMO", FX_A);
     }
     if (paused) {
-        dither(0, 0, 128, 128, INK, 0);
-        fillRound(24, 34, 80, 56, 4, NAVY);
-        roundRect(24, 34, 80, 56, 4, GOLD);
+        gfx_dither(0, 0, 128, 128, INK, 0);
+        panel(24, 34, 80, 56, 4, NAVY, GOLD);
         centred57(39, "PAUSED", GOLD);
         static const char *const P[3] = {"RESUME", "OPTIONS", "SAVE & QUIT"};
         for (int i = 0; i < 3; i++) {
@@ -561,9 +559,9 @@ static void creditsRender(uint32_t frame) {
         creditsReady = true;
         const int top = lay::RAIL_Y + lay::RAIL_H;
         gfx_fillRect(0, top, 128, 128 - top, FELT);
-        dither(0, top, 6, 128, FELT_DK, 0);               // the lamplight falls off
-        dither(122, top, 6, 128, FELT_DK, 1);
-        dither(0, 122, 128, 6, FELT_DK, 1);
+        gfx_dither(0, top, 6, 128, FELT_DK, 0);           // the lamplight falls off
+        gfx_dither(122, top, 6, 128, FELT_DK, 1);
+        gfx_dither(0, 122, 128, 6, FELT_DK, 1);
         ppotLogo(64 - PPOT_LOGO_W / 2, 51, true);         // printed on the felt
         art::chipStack(16, 80, 25 * 3 + 10 * 2, 6);
         art::chipStack(112, 80, 100 + 25 * 2 + 5, 6);
@@ -590,7 +588,7 @@ static void creditsRender(uint32_t frame) {
     text35(109, 17, "24H", lit ? SKIN : WINE);
 
     // An ashtray on the rail, and a curl of smoke drifting up past the sign.
-    fillEllipse(111, 40, 6, 2, SILVER);
+    gfx_fillEllipse(111, 40, 6, 2, SILVER);
     gfx_hline(108, 39, 7, INK);
     gfx_hline(113, 38, 5, WHITE);
     gfx_pixel(118, 38, (frame & 8) ? RED : GOLD);
@@ -614,13 +612,29 @@ static void endUpdate() {
     }
 }
 
+// gfx_line's Bresenham from the sunburst's centre, stopped where it leaves
+// the screen: a ray only moves outward, so nothing after that is visible
+// (gfx_line walks all 120 px and clips each pixel).
+static void ray(int x1, int y1, uint8_t c) {
+    int x = 64, y = 60;
+    int dx = x1 > x ? x1 - x : x - x1, dy = y1 > y ? y1 - y : y - y1;
+    int sx = x < x1 ? 1 : -1, sy = y < y1 ? 1 : -1, err = dx - dy;
+    while ((unsigned)x < GFX_W && (unsigned)y < GFX_H) {
+        gfx_pixel(x, y, c);
+        if (x == x1 && y == y1) break;
+        int e2 = err << 1;
+        if (e2 > -dy) { err -= dy; x += sx; }
+        if (e2 < dx) { err += dx; y += sy; }
+    }
+}
+
 static void winRender(uint32_t frame) {
     gfx_clear(NAVY);
     // Rotating sunburst - PPOT's radiating stars, grown up.
     for (int i = 0; i < 16; i++) {
         int a = i * 16 + (int)(frame & 255);
         int x1 = 64 + ((fx::isin(a + 64) * 120) >> 8), y1 = 60 + ((fx::isin(a) * 120) >> 8);
-        gfx_line(64, 60, x1, y1, (i & 1) ? FX_A : WINE);
+        ray(x1, y1, (i & 1) ? FX_A : WINE);
     }
     uint8_t ramp[16];
     static const uint8_t R[5] = {RED, GOLD, FELT_LT, CYAN, BLUE};
@@ -717,8 +731,7 @@ void render(uint32_t frame) {
     }
     if (toastT) {
         int w = gfx_textWidth(toastText) + 8;
-        fillRound(64 - w / 2, 2, w, 11, 3, INK);
-        roundRect(64 - w / 2, 2, w, 11, 3, GOLD);
+        panel(64 - w / 2, 2, w, 11, 3, INK, GOLD);
         centred57(4, toastText, WHITE);
     }
 }

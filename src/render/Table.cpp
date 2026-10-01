@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 #include <CHGfx.h>
 #include <string.h>
 #include "Table.h"
@@ -17,21 +17,21 @@ using namespace lay;
 void wall(uint32_t frame) {
     (void)frame;
     // Pinstripe wallpaper: build one row, copy it down the wall (vertical
-    // lines drawn pixel by pixel cost over a millisecond).
-    uint8_t row[GFX_FB_STRIDE];
+    // lines drawn pixel by pixel cost over a millisecond). gfx_copyRow copies
+    // words from SRAM when both rows are word aligned; memcpy is a byte loop.
+    uint8_t row[GFX_FB_STRIDE] __attribute__((aligned(4)));
     memset(row, NAVY | (NAVY << 4), sizeof row);
     for (int x = 3; x < 128; x += 8) row[x >> 1] = (uint8_t)((row[x >> 1] & 0x0F) | (INK << 4));
-    for (int y = 0; y < WALL_H; y++) memcpy(gfx_fb + y * GFX_FB_STRIDE, row, sizeof row);
-    dither(0, 0, 128, 3, INK, 0);                        // darker ceiling
+    for (int y = 0; y < WALL_H; y++) gfx_copyRow(y, row, 0, GFX_W);
+    gfx_dither(0, 0, 128, 3, INK, 0);                    // darker ceiling
     // Warm spotlight behind the dealer.
-    dither(DEALER_X + 6, 2, 36, 30, WOOD, 1);
+    gfx_dither(DEALER_X + 6, 2, 36, 30, WOOD, 1);
 }
 
 void dealer(uint8_t expr, uint8_t look, bool alt, int x, int y) {
-    span4(DEALER, x, y, 15, alt ? DEALER_ALT_REMAP : nullptr);
+    gfx_sprite4(DEALER, x, y, alt ? DEALER_ALT_REMAP : nullptr);
     int fx = x + (FACE_X - DEALER_X), fy = y + (FACE_Y - DEALER_Y);
-    if (alt) blit4(FACE_NORMAL, fx, fy, 24, 18, 15, DEALER_ALT_REMAP);
-    else gfx_blit(FACE_NORMAL, fx, fy, 24, 18, 15);
+    gfx_sprite4(FACE_NORMAL, fx, fy, alt ? DEALER_ALT_REMAP : nullptr);
     if (expr > E_TALK) expr = E_NORMAL;
     if (expr) {
         for (uint16_t i = FACE_EDIT_AT[expr - 1]; i < FACE_EDIT_AT[expr]; i++) {
@@ -97,8 +97,8 @@ static void arcLine(int x0, int x1, int y, uint8_t c) {
 
 void felt(const Round &r) {
     // Darker edges give the felt some depth.
-    dither(0, RAIL_Y + 4, 3, TRIM_Y - RAIL_Y - 4, FELT_DK, 0);
-    dither(125, RAIL_Y + 4, 3, TRIM_Y - RAIL_Y - 4, FELT_DK, 1);
+    gfx_dither(0, RAIL_Y + 4, 3, TRIM_Y - RAIL_Y - 4, FELT_DK, 0);
+    gfx_dither(125, RAIL_Y + 4, 3, TRIM_Y - RAIL_Y - 4, FELT_DK, 1);
     gfx_hline(0, RAIL_Y + 4, 128, FELT_DK);
     // Table printing, the way a real layout reads.
     arcLine(10, 118, PRINT_Y - 2, FELT_LT);
@@ -108,16 +108,15 @@ void felt(const Round &r) {
     text35(64 - text35Width(rule) / 2, DEALER_CARDS_Y + 11, rule, FELT_LT);
     text35(64 - text35Width("INSURANCE PAYS 2 TO 1") / 2, DEALER_CARDS_Y + 18, "INSURANCE PAYS 2 TO 1", FELT_LT);
     // Betting circle.
-    fillEllipse(BET_CX, BET_CY, BET_RX, BET_RY, FELT_DK);
-    ellipse(BET_CX, BET_CY, BET_RX, BET_RY, FELT_LT);
-    ellipse(BET_CX, BET_CY, BET_RX - 2, BET_RY - 2, FELT);
+    gfx_fillEllipse(BET_CX, BET_CY, BET_RX, BET_RY, FELT_DK);
+    gfx_ellipse(BET_CX, BET_CY, BET_RX, BET_RY, FELT_LT);
+    gfx_ellipse(BET_CX, BET_CY, BET_RX - 2, BET_RY - 2, FELT);
 }
 
 void shoe(uint8_t left, uint8_t shuf) {
     int x = SHOE_X, y = SHOE_Y;
     // Wooden box, card backs visible through the top, a slot at the front.
-    fillRound(x, y, SHOE_W, SHOE_H, 2, WOOD);
-    roundRect(x, y, SHOE_W, SHOE_H, 2, INK);
+    panel(x, y, SHOE_W, SHOE_H, 2, WOOD, INK);
     gfx_fillRect(x + 3, y + 3, SHOE_W - 6, 12, WINE);
     int depth = 1 + (left * 10) / 100;                   // how full the shoe looks
     for (int i = 0; i < depth; i++) gfx_hline(x + 4, y + 14 - i, SHOE_W - 8, (i & 1) ? RED : WINE);
@@ -135,8 +134,7 @@ void shoe(uint8_t left, uint8_t shuf) {
 
 void plaque(int32_t purse, int32_t bet, uint8_t flash) {
     int x = PLAQUE_X, y = PLAQUE_Y;
-    fillRound(x, y, PLAQUE_W, PLAQUE_H, 3, INK);
-    roundRect(x, y, PLAQUE_W, PLAQUE_H, 3, GOLD);
+    panel(x, y, PLAQUE_W, PLAQUE_H, 3, INK, GOLD);
     text35(x + 4, y + 3, "PURSE", FELT_LT);
     char buf[12];
     fmtMoney(buf, purse);

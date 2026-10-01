@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 #include <CHGfx.h>
 #include <string.h>
 #include "Fx.h"
@@ -211,16 +211,9 @@ void applyShake(int y0, int y1) {
     int a = (shakeAmp * shakeT + 9) / 10;
     if (a < 1) a = 1;
     int dy = (shakeT & 1) ? a : -a;
-    int dxBytes = (shakeT & 2) ? 1 : -1;                    // 2 px sideways
-    int rows = y1 - y0 + 1;
-    uint8_t *base = gfx_fb + y0 * GFX_FB_STRIDE;
-    if (dy > 0) memmove(base + dy * GFX_FB_STRIDE, base, (size_t)(rows - dy) * GFX_FB_STRIDE);
-    else memmove(base, base - dy * GFX_FB_STRIDE, (size_t)(rows + dy) * GFX_FB_STRIDE);
-    for (int y = 0; y < rows; y++) {
-        uint8_t *row = base + y * GFX_FB_STRIDE;
-        if (dxBytes > 0) memmove(row + 1, row, GFX_FB_STRIDE - 1);
-        else memmove(row, row + 1, GFX_FB_STRIDE - 1);
-    }
+    // 2 px sideways. gfx_scroll copies words from SRAM; memmove here is a
+    // byte loop in flash (CHGfx measured 6.3 ms against 1.0 for 118 rows).
+    gfx_scroll(y0, y1 - y0 + 1, (shakeT & 2) ? 2 : -2, dy);
 }
 
 bool activeRows(int &lo, int &hi) {

@@ -1,4 +1,4 @@
-#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask)
+#pragma GCC optimize("Os")   // cold code: size over speed (hot pixel loops live in Draw/Mask and CHGfx)
 #include <CHGfx.h>
 #include "Palette.h"
 
@@ -36,7 +36,6 @@ static const uint16_t RAINBOW[12] = {
 };
 
 static uint16_t staged[16];
-static uint16_t committed[16];
 static bool     dirty = true;
 static uint8_t  themeIdx = 0, fadeLevel = 16, desat = 0;
 static bool     cycling = true;
@@ -103,11 +102,10 @@ void commit() {
         if (fadeLevel < 16) { r = (r * fadeLevel) >> 4; g = (g * fadeLevel) >> 4; b = (b * fadeLevel) >> 4; }
         out[i] = to565((uint16_t)((r << 8) | (g << 4) | b));
     }
-    bool same = true;
-    for (uint8_t i = 0; i < 16; i++) if (out[i] != committed[i]) { same = false; break; }
-    if (same) return;
-    for (uint8_t i = 0; i < 16; i++) committed[i] = out[i];
-    gfx_setPalette(out, 16);
+    // gfx_pal is what was last committed: only a real change costs the
+    // flush a LUT rebuild.
+    for (uint8_t i = 0; i < 16; i++)
+        if (out[i] != gfx_pal[i]) { gfx_setPalette(out, 16); return; }
 }
 
 }  // namespace pal
